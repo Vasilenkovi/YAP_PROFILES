@@ -1,0 +1,65 @@
+# Python virtual environment and local tooling
+venv/
+.venv/
+ENV/
+.env
+.env.*
+.python-version
+
+# Python cache and compiled files
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+
+# Jupyter / notebooks
+.ipynb_checkpoints/
+
+# Local generated artifacts and working outputs
+artifacts/
+**/artifacts/
+output/
+out/
+results/
+checkpoints/
+*.token
+*.resumption_token
+resumption_token.txt
+
+# Project-generated demo/report dirs
+/demo_artifacts/
+/demo_artifacts_filtered/
+/demo_artifacts_level4/
+/demo conll/
+/demo ontonotes/
+
+# Data dirs that are generated or local-only
+# Keep source datasets tracked explicitly if needed; uncomment only if they are generated
+# data/artifacts/
+# data/source_data/
+
+# OS/editor clutter
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+
+# Logs, temp, and backup files
+*.log
+*.tmp
+*.bak
+*.swp
+*.orig
+
+# Secrets / certs / key material
+*.pem
+*.key
+*.crt
+*.cer
+*.p12
+*.pfx
+*.jks
+
+# Common local config files
+*.local
+local_settings.py

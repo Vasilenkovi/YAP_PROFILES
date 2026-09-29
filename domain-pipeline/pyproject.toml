@@ -1,0 +1,41 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "domain-pipeline"
+version = "0.1.0"
+description = "Configurable artifact-based pipeline for NER, keywords, embeddings, ILC centroids, and domain assignment."
+readme = "README.md"
+requires-python = ">=3.10"
+dependencies = [
+  "numpy",
+  "pandas",
+  "pyyaml",
+  "scikit-learn",
+  "tqdm",
+]
+
+[project.optional-dependencies]
+models = [
+  "sentence-transformers",
+  "transformers",
+  "keybert",
+  "torch",
+]
+ilc = [
+  "rdflib",
+  "requests",
+]
+viz = [
+  "umap-learn",
+  "plotly",
+  "wordcloud",
+  "matplotlib",
+]
+
+[project.scripts]
+domain-pipeline = "domain_pipeline.cli:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
