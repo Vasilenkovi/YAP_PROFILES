@@ -1,0 +1,71 @@
+project:
+  artifact_root: artifacts
+
+artifacts:
+  articles_with_ner_keywords:
+    type: table
+    path: ../data/artifacts/mit_oai_with_ner_keywords.csv
+    id_column: oai_identifier
+
+  articles_without_orcid_filtered:
+    type: table
+    path: ../data/source_data/articles_without_orcid_filtered.csv
+    id_column: oai_identifier
+
+  articles_filtered_for_ilc:
+    type: table
+    path: ../data/artifacts/articles_filtered_for_ilc.csv
+    id_column: oai_identifier
+
+  article_embeddings_smart:
+    type: embeddings
+    path: ../data/artifacts/embeddings_smart.npy
+    expected_items_artifact: articles_without_orcid_filtered
+    embedding_dim: 768
+
+  article_embeddings_filtered:
+    type: embeddings
+    path: ../data/artifacts/embeddings_filtered.npy
+    expected_items_artifact: articles_filtered_for_ilc
+    embedding_dim: 768
+
+  ilc_tree_depth7:
+    type: json
+    path: ../data/source_data/ilc_subjects_level7.json
+
+  ilc_level4_centroids_embeddings:
+    type: embeddings
+    path: ../data/artifacts/ilc_level4_centroids_deep.npy
+    embedding_dim: 768
+
+  ilc_level4_centroids_metadata:
+    type: table_pickle
+    path: ../data/artifacts/ilc_level4_centroids_deep.pkl
+
+steps:
+  validate_artifacts:
+    enabled: true
+
+  domain_assignment:
+    enabled: false
+    input_items: articles_without_orcid_filtered
+    input_embeddings: article_embeddings_smart
+    centroids_embeddings: ilc_level4_centroids_embeddings
+    centroids_metadata: ilc_level4_centroids_metadata
+    centroids_metadata_fallback_tree: ilc_tree_depth7
+    centroids_target_depth: 4
+    centroids_descendant_depth: 3
+    output_artifact: domains_level4_from_existing
+    scaler: standard
+    method: fixed_centroid_kmeans
+    kmeans:
+      n_init: 1
+      max_iter: 1
+      random_state: 42
+    distance:
+      metric: cosine
+    output_columns:
+      cluster: ilc_level4_cluster
+      notation: ilc_notation
+      label: ilc_label
+      distance: min_distance_to_ilc_center

@@ -1,0 +1,176 @@
+project:
+  artifact_root: artifacts
+
+artifacts:
+  raw_articles:
+    type: table
+    path: ../misc/mit_oai_all.csv
+    id_column: oai_identifier
+
+steps:
+  harvest_oai_records:
+    enabled: false
+    output_artifact: raw_articles_harvested
+    base_url: https://dspace.mit.edu/oai/request
+    metadata_prefix: oai_dc
+    token_path: artifacts/oai.resumption_token
+    timeout: 60
+
+  extract_ner_keywords:
+    enabled: true
+    input_artifact: raw_articles
+    output_artifact: articles_with_ner_keywords
+    text_columns: [title, description]
+    max_text_len: 3000
+    ner:
+      provider: transformers
+      model: tner/deberta-v3-large-ontonotes5
+      tokenizer: tner/deberta-v3-large-ontonotes5
+      aggregation_strategy: simple
+      device: 0
+    keywords:
+      provider: keybert
+      model: all-mpnet-base-v2
+      top_n: 10
+      keyphrase_ngram_range: [1, 3]
+      stop_words: english
+      use_mmr: true
+      diversity: 0.7
+    checkpoint:
+      every_rows: 100
+
+  filter_records:
+    enabled: true
+    input_artifact: articles_with_ner_keywords
+    with_orcid_artifact: articles_with_orcid_filtered
+    without_orcid_artifact: articles_without_orcid_filtered
+    orcid_column: orcid
+    ner_confidence:
+      strategy: mean_std
+      std_multiplier: 3
+    keyword_confidence:
+      min_score: 0.05
+
+  build_author_profiles:
+    enabled: false
+    input_artifact: articles_with_orcid_filtered
+    output_artifact: author_profiles
+    orcid_column: orcid
+
+  extract_author_entities:
+    enabled: false
+    input_artifact: articles_with_orcid_filtered
+    output_artifact: orcid_profiles_with_ner
+    orcid_column: orcid
+    text_columns: [title, description]
+    max_text_len: 5000
+    ner:
+      model: xlm-roberta-large-finetuned-conll03-english
+      aggregation_strategy: simple
+      device: -1
+
+  export_author_entities_for_neo4j:
+    enabled: false
+    input_artifact: orcid_profiles_with_ner
+    output_artifact: neo4j_ready
+    orcid_column: orcid
+    entity_column: entities
+
+  build_features:
+    enabled: true
+    input_artifact: articles_without_orcid_filtered
+    output_artifact: articles_features
+    output_column: smart_features
+    exclude_ner_labels: [DATE, TIME, PERCENT, MONEY, QUANTITY, CARDINAL, ORDINAL]
+
+  filter_features:
+    enabled: true
+    input_artifact: articles_features
+    output_artifact: articles_features_filtered
+    input_column: smart_features
+    output_column: smart_features_filtered
+    document_frequency:
+      max_df_ratio: 0.10
+      min_word_length: 2
+
+  vectorize:
+    enabled: true
+    input_artifact: articles_features_filtered
+    output_artifact: article_embeddings_filtered
+    text_column: smart_features_filtered
+    model: all-mpnet-base-v2
+    batch_size: 32
+    reuse_if_exists: true
+
+  cluster_embeddings:
+    enabled: false
+    input_items: articles_features_filtered
+    input_embeddings: article_embeddings_filtered
+    output_artifact: articles_without_orcid_kmeans
+    method: kmeans
+    scaler: standard
+    label_column: kmeans_cluster
+    kmeans:
+      n_clusters: 20
+      random_state: 42
+
+  build_ilc_tree:
+    enabled: false
+    source_url: https://www.iskoi.org/ilc/2/skos/ILC2.ttl
+    local_ttl_path: artifacts/ilc/ILC2.ttl
+    output_artifact: ilc_tree_depth7
+    max_depth: 7
+    root_notations: a-y
+
+  build_ilc_centroids:
+    enabled: true
+    input_tree: ilc_tree_depth7
+    output_embeddings_artifact: ilc_centroids_depth4_desc3_embeddings
+    output_metadata_artifact: ilc_centroids_depth4_desc3_metadata
+    target_depth: 4
+    descendant_depth: 3
+    text_parts: [description, label, descendant_labels]
+    vectorizer:
+      model: all-mpnet-base-v2
+      batch_size: 32
+
+  domain_assignment:
+    enabled: true
+    input_items: articles_features_filtered
+    input_embeddings: article_embeddings_filtered
+    centroids_embeddings: ilc_centroids_depth4_desc3_embeddings
+    centroids_metadata: ilc_centroids_depth4_desc3_metadata
+    output_artifact: domains_depth4_desc3_filtered
+    scaler: standard
+    method: fixed_centroid_kmeans
+    kmeans:
+      n_init: 1
+      max_iter: 1
+      random_state: 42
+    distance:
+      metric: cosine
+
+  build_umap_projection:
+    enabled: false
+    input_items: domains_depth4_desc3_filtered
+    input_embeddings: article_embeddings_filtered
+    output_artifact: domains_depth4_desc3_umap
+    scaler: standard
+    random_state: 42
+
+  write_plotly_scatter:
+    enabled: false
+    input_artifact: domains_depth4_desc3_umap
+    output_html: artifacts/domains_depth4_desc3_umap.html
+    x_column: umap_x
+    y_column: umap_y
+    color_column: ilc_label
+    hover_data: [ilc_notation, ilc_label]
+    title: ILC domain assignment UMAP
+
+  build_wordclouds:
+    enabled: false
+    input_artifact: domains_depth4_desc3_filtered
+    output_dir: artifacts/wordclouds_level4
+    group_columns: [ilc_notation, ilc_label]
+    max_words: 200
