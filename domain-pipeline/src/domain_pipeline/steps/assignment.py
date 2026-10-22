@@ -38,6 +38,10 @@ def domain_assignment(context: PipelineContext, cfg: dict) -> None:
             f"Centroid metadata mismatch: rows={len(centroids_meta)}, embeddings={centroids.shape[0]}"
         )
 
+    if cfg.get("method") == "cosine_topk":
+        _assign_cosine_topk(context, cfg, df, embeddings, centroids, centroids_meta, items_ref, embeddings_ref, centroids_ref)
+        return
+
     if cfg.get("scaler", "standard") == "standard":
         scaler = StandardScaler()
         embeddings_scaled = scaler.fit_transform(embeddings)
@@ -80,6 +84,58 @@ def domain_assignment(context: PipelineContext, cfg: dict) -> None:
             "input_embeddings": embeddings_ref.name,
             "centroids_embeddings": centroids_ref.name,
             "centroids_count": int(centroids.shape[0]),
+        },
+    )
+
+
+def _assign_cosine_topk(context, cfg, df, embeddings, centroids, centroids_meta, items_ref, embeddings_ref, centroids_ref):
+    """Назначение по косинусной близости к фиксированным центроидам (без KMeans и скейлинга).
+
+    В отличие от fixed_centroid_kmeans, центроиды не пересчитываются, поэтому метка всегда
+    соответствует исходному классу таксономии. Пишет top-k классов со скорами и margin
+    (разрыв между 1-м и 2-м классом) как меру уверенности.
+    """
+    top_k = int(cfg.get("top_k", 3))
+    min_score = float(cfg.get("min_score", 0.0))
+    emb = embeddings / np.linalg.norm(embeddings, axis=1, keepdims=True).clip(min=1e-12)
+    cen = centroids / np.linalg.norm(centroids, axis=1, keepdims=True).clip(min=1e-12)
+    sims = emb @ cen.T
+    order = np.argsort(-sims, axis=1)[:, :top_k]
+
+    cols = cfg.get("output_columns", {})
+    notation_col = cols.get("notation", "domain_notation")
+    label_col = cols.get("label", "domain_label")
+    score_col = cols.get("score", "domain_score")
+    notations = centroids_meta["notation"].astype(str).to_numpy()
+    labels = centroids_meta["label"].astype(str).to_numpy()
+    rows = np.arange(len(df))
+
+    best = order[:, 0]
+    df[notation_col] = notations[best]
+    df[label_col] = labels[best]
+    df[score_col] = sims[rows, best].round(4)
+    if top_k > 1:
+        df[f"{score_col}_margin"] = (sims[rows, best] - sims[rows, order[:, 1]]).round(4)
+    df[f"{notation_col}_top{top_k}"] = [
+        "; ".join(f"{notations[j]}|{labels[j]}|{sims[i, j]:.4f}" for j in order[i]) for i in rows
+    ]
+    if min_score > 0:
+        mask = df[score_col] < min_score
+        df.loc[mask, [notation_col, label_col]] = ["unassigned", "unassigned"]
+
+    output_path = context.artifacts.output_path(cfg["output_artifact"], ".csv")
+    output_ref = context.artifacts.register(cfg["output_artifact"], "table", output_path, cfg)
+    write_table(df, output_path)
+    np.save(output_path.with_name(output_path.stem + ".similarities.npy"), sims.astype(np.float32))
+    context.artifacts.write_metadata(
+        output_ref,
+        {
+            "row_count": len(df),
+            "source_artifact": items_ref.name,
+            "input_embeddings": embeddings_ref.name,
+            "centroids_embeddings": centroids_ref.name,
+            "centroids_count": int(centroids.shape[0]),
+            "method": "cosine_topk",
         },
     )
 

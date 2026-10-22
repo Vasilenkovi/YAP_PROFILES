@@ -11,11 +11,23 @@ if TYPE_CHECKING:
     from domain_pipeline.pipeline import PipelineContext
 
 
+def _explode_orcids(df: pd.DataFrame, orcid_column: str, cfg: dict) -> pd.DataFrame:
+    """orcid_separator: ";" -> одна строка на каждый ORCID работы (по умолчанию не применяется)."""
+    separator = cfg.get("orcid_separator")
+    if not separator:
+        return df
+    df = df.copy()
+    df[orcid_column] = df[orcid_column].astype(str).str.split(separator)
+    df = df.explode(orcid_column)
+    df[orcid_column] = df[orcid_column].str.strip()
+    return df[df[orcid_column] != ""]
+
+
 def build_author_profiles(context: PipelineContext, cfg: dict) -> None:
     input_ref = context.artifacts.get(cfg["input_artifact"])
     df = read_table(input_ref)
     orcid_column = cfg.get("orcid_column", "orcid")
-    df = df.dropna(subset=[orcid_column]).copy()
+    df = _explode_orcids(df.dropna(subset=[orcid_column]), orcid_column, cfg)
 
     profiles = defaultdict(lambda: {"ner": defaultdict(int), "keywords": defaultdict(int)})
     for _, row in df.iterrows():
@@ -52,8 +64,9 @@ def extract_author_entities(context: PipelineContext, cfg: dict) -> None:
     orcid_column = cfg.get("orcid_column", "orcid")
     text_columns = cfg.get("text_columns", ["title", "description"])
     max_len = int(cfg.get("max_text_len", 5000))
+    df = _explode_orcids(df.dropna(subset=[orcid_column]), orcid_column, cfg)
 
-    profiles = df.dropna(subset=[orcid_column]).groupby(orcid_column).agg(
+    profiles = df.groupby(orcid_column).agg(
         {column: lambda values: " ".join(values.dropna().astype(str)) for column in text_columns}
     ).reset_index()
 

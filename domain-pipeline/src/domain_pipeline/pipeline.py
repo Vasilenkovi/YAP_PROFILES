@@ -8,7 +8,8 @@ from domain_pipeline.steps.assignment import domain_assignment
 from domain_pipeline.steps.authors import build_author_profiles, export_author_entities_for_neo4j, extract_author_entities
 from domain_pipeline.steps.clustering import cluster_embeddings
 from domain_pipeline.steps.extraction import extract_ner_keywords
-from domain_pipeline.steps.features import build_features, filter_features
+from domain_pipeline.steps.llm_keywords import extract_llm_keywords
+from domain_pipeline.steps.features import build_features, filter_features, refine_features
 from domain_pipeline.steps.filtering import filter_records
 from domain_pipeline.steps.ilc import build_ilc_centroids, build_ilc_tree
 from domain_pipeline.steps.source import harvest_oai_records
@@ -27,12 +28,14 @@ class PipelineContext:
 STEP_REGISTRY: dict[str, StepFunc] = {
     "harvest_oai_records": harvest_oai_records,
     "extract_ner_keywords": extract_ner_keywords,
+    "extract_llm_keywords": extract_llm_keywords,
     "filter_records": filter_records,
     "build_author_profiles": build_author_profiles,
     "extract_author_entities": extract_author_entities,
     "export_author_entities_for_neo4j": export_author_entities_for_neo4j,
     "build_features": build_features,
     "filter_features": filter_features,
+    "refine_features": refine_features,
     "vectorize": build_features,  # replaced in import below to keep registry readable
     "cluster_embeddings": cluster_embeddings,
     "build_ilc_tree": build_ilc_tree,
@@ -71,11 +74,15 @@ def run_pipeline(config: dict, from_step: str | None = None, only_step: str | No
         else:
             raise KeyError(f"Unknown start step: {from_step}")
 
+    # Ключ шага может иметь суффикс "@tag" (domain_assignment@asjc): несколько экземпляров одного
+    # шага выполняются в порядке реестра, а между собой — в порядке следования в конфиге.
+    for unknown in {key.split("@", 1)[0] for key in steps} - set(STEP_REGISTRY) - {"validate_artifacts"}:
+        raise KeyError(f"Unknown step in config: {unknown}")
     for name in ordered_step_names:
         if name not in STEP_REGISTRY:
             raise KeyError(f"Unknown step: {name}")
-        step_cfg = steps.get(name, {})
-        if not step_cfg.get("enabled", False):
-            continue
-        print(f"==> {name}")
-        STEP_REGISTRY[name](context, step_cfg)
+        for key, step_cfg in steps.items():
+            if key.split("@", 1)[0] != name or not (step_cfg or {}).get("enabled", False):
+                continue
+            print(f"==> {key}")
+            STEP_REGISTRY[name](context, step_cfg)

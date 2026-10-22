@@ -76,6 +76,7 @@ def build_ilc_centroids(context: PipelineContext, cfg: dict) -> None:
     emb_ref = context.artifacts.register(cfg["output_embeddings_artifact"], "embeddings", emb_path, cfg)
     meta_ref = context.artifacts.register(cfg["output_metadata_artifact"], "table_pickle", meta_path, cfg)
     emb_path.parent.mkdir(parents=True, exist_ok=True)
+    meta_path.parent.mkdir(parents=True, exist_ok=True)
     np.save(emb_path, array)
     df.to_pickle(meta_path)
     context.artifacts.write_metadata(emb_ref, {"shape": list(array.shape), "target_depth": target_depth})

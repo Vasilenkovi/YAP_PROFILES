@@ -24,6 +24,7 @@ def extract_ner_keywords(context: PipelineContext, cfg: dict) -> None:
     output_path = context.artifacts.output_path(cfg["output_artifact"], ".csv")
     output_ref = context.artifacts.register(cfg["output_artifact"], "table", output_path, cfg)
     temp_path = output_path.with_suffix(".temp.csv")
+    output_path.parent.mkdir(parents=True, exist_ok=True)
 
     df = pd.read_csv(input_ref.path)
     start_idx = 0
